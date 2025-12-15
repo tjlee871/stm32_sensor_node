@@ -42,17 +42,13 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c2;
-DMA_HandleTypeDef hdma_i2c2_rx;
-DMA_HandleTypeDef hdma_i2c2_tx;
-
-SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart1;
 
-/* Definitions for outputSensorDat */
-osThreadId_t outputSensorDatHandle;
-const osThreadAttr_t outputSensorDat_attributes = {
-  .name = "outputSensorDat",
+/* Definitions for outputDataTask */
+osThreadId_t outputDataTaskHandle;
+const osThreadAttr_t outputDataTask_attributes = {
+  .name = "outputDataTask",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
@@ -126,18 +122,16 @@ const osThreadAttr_t ledTask_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_I2C2_Init(void);
-static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
-void SensorDataTask(void *argument);
-void HumTempTask(void *argument);
-void MagTask(void *argument);
-void PresTask(void *argument);
-void AccGyroTask(void *argument);
+void OutputDataTask(void *argument);
+void ReadHumTempTask(void *argument);
+void ReadMagTask(void *argument);
+void ReadPresTask(void *argument);
+void ReadAccGyroTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-void peripheral_ready_wait(void);
+void PeripheralReadyWait(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -174,12 +168,10 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_I2C2_Init();
-  MX_SPI1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  peripheral_ready_wait();
+  PeripheralReadyWait();
   hts221_init(&hi2c2);
   lis3mdl_init(&hi2c2);
   lps22hb_init(&hi2c2);
@@ -225,20 +217,20 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of outputSensorDat */
-  outputSensorDatHandle = osThreadNew(SensorDataTask, NULL, &outputSensorDat_attributes);
+  /* creation of outputDataTask */
+  outputDataTaskHandle = osThreadNew(OutputDataTask, NULL, &outputDataTask_attributes);
 
   /* creation of readHumTempTask */
-  readHumTempTaskHandle = osThreadNew(HumTempTask, NULL, &readHumTempTask_attributes);
+  readHumTempTaskHandle = osThreadNew(ReadHumTempTask, NULL, &readHumTempTask_attributes);
 
   /* creation of readMagTask */
-  readMagTaskHandle = osThreadNew(MagTask, NULL, &readMagTask_attributes);
+  readMagTaskHandle = osThreadNew(ReadMagTask, NULL, &readMagTask_attributes);
 
   /* creation of readPresTask */
-  readPresTaskHandle = osThreadNew(PresTask, NULL, &readPresTask_attributes);
+  readPresTaskHandle = osThreadNew(ReadPresTask, NULL, &readPresTask_attributes);
 
   /* creation of readAccGyroTask */
-  readAccGyroTaskHandle = osThreadNew(AccGyroTask, NULL, &readAccGyroTask_attributes);
+  readAccGyroTaskHandle = osThreadNew(ReadAccGyroTask, NULL, &readAccGyroTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 
@@ -363,45 +355,6 @@ static void MX_I2C2_Init(void)
 }
 
 /**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_SLAVE;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_HARD_INPUT;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 7;
-  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -437,25 +390,6 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-  /* DMA1_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -468,21 +402,10 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : BUTTON2_Pin */
-  GPIO_InitStruct.Pin = BUTTON2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(BUTTON2_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED2_Pin */
   GPIO_InitStruct.Pin = LED2_Pin;
@@ -490,13 +413,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED2_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LED3_Pin */
-  GPIO_InitStruct.Pin = LED3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LED3_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -510,7 +426,7 @@ PUTCHAR_PROTOTYPE
   return ch;
 }
 
-void peripheral_ready_wait(void)
+void PeripheralReadyWait(void)
 {
   while (HAL_I2C_GetState(&hi2c2) != HAL_I2C_STATE_READY) {}
   while (HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY) {}
@@ -519,14 +435,14 @@ void peripheral_ready_wait(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_SensorDataTask */
+/* USER CODE BEGIN Header_OutputDataTask */
 /**
-  * @brief  Function implementing the outputSensorDat thread.
+  * @brief  Function implementing the outputDataTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_SensorDataTask */
-void SensorDataTask(void *argument)
+/* USER CODE END Header_OutputDataTask */
+void OutputDataTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   hts221_typedef hts221_data = {0};
@@ -572,16 +488,16 @@ void SensorDataTask(void *argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_HumTempTask */
+/* USER CODE BEGIN Header_ReadHumTempTask */
 /**
 * @brief Function implementing the readHumTempTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_HumTempTask */
-void HumTempTask(void *argument)
+/* USER CODE END Header_ReadHumTempTask */
+void ReadHumTempTask(void *argument)
 {
-  /* USER CODE BEGIN HumTempTask */
+  /* USER CODE BEGIN ReadHumTempTask */
   hts221_typedef hts221_data = {0};
   /* Infinite loop */
   for(;;)
@@ -594,19 +510,19 @@ void HumTempTask(void *argument)
     }
     osDelay(100);
   }
-  /* USER CODE END HumTempTask */
+  /* USER CODE END ReadHumTempTask */
 }
 
-/* USER CODE BEGIN Header_MagTask */
+/* USER CODE BEGIN Header_ReadMagTask */
 /**
 * @brief Function implementing the readMagTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_MagTask */
-void MagTask(void *argument)
+/* USER CODE END Header_ReadMagTask */
+void ReadMagTask(void *argument)
 {
-  /* USER CODE BEGIN MagTask */
+  /* USER CODE BEGIN ReadMagTask */
   lis3mdl_typedef lis3mdl_data = {0};
   /* Infinite loop */
   for(;;)
@@ -619,19 +535,19 @@ void MagTask(void *argument)
     }
     osDelay(100);
   }
-  /* USER CODE END MagTask */
+  /* USER CODE END ReadMagTask */
 }
 
-/* USER CODE BEGIN Header_PresTask */
+/* USER CODE BEGIN Header_ReadPresTask */
 /**
 * @brief Function implementing the readPresTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_PresTask */
-void PresTask(void *argument)
+/* USER CODE END Header_ReadPresTask */
+void ReadPresTask(void *argument)
 {
-  /* USER CODE BEGIN PresTask */
+  /* USER CODE BEGIN ReadPresTask */
   lps22hb_typedef lps22hb_data = {0};
   /* Infinite loop */
   for(;;)
@@ -644,19 +560,19 @@ void PresTask(void *argument)
     }
     osDelay(100);
   }
-  /* USER CODE END PresTask */
+  /* USER CODE END ReadPresTask */
 }
 
-/* USER CODE BEGIN Header_AccGyroTask */
+/* USER CODE BEGIN Header_ReadAccGyroTask */
 /**
 * @brief Function implementing the readAccGyroTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_AccGyroTask */
-void AccGyroTask(void *argument)
+/* USER CODE END Header_ReadAccGyroTask */
+void ReadAccGyroTask(void *argument)
 {
-  /* USER CODE BEGIN AccGyroTask */
+  /* USER CODE BEGIN ReadAccGyroTask */
   lsm6dsl_typedef lsm6dsl_data = {0};
   /* Infinite loop */
   for(;;)
@@ -669,7 +585,7 @@ void AccGyroTask(void *argument)
     }
     osDelay(100);
   }
-  /* USER CODE END AccGyroTask */
+  /* USER CODE END ReadAccGyroTask */
 }
 
 /**

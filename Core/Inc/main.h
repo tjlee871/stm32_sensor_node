@@ -58,12 +58,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define BUTTON2_Pin GPIO_PIN_13
-#define BUTTON2_GPIO_Port GPIOC
 #define LED2_Pin GPIO_PIN_14
 #define LED2_GPIO_Port GPIOB
-#define LED3_Pin GPIO_PIN_9
-#define LED3_GPIO_Port GPIOC
 
 /* USER CODE BEGIN Private defines */
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)

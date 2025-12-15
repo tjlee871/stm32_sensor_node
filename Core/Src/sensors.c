@@ -4,6 +4,7 @@
  *  Created on: Dec 4, 2025
  *      Author: TJ
  */
+
 #include "sensors.h"
 
 HAL_StatusTypeDef hts221_init(I2C_HandleTypeDef *handler)

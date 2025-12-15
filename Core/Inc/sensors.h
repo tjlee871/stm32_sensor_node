@@ -9,7 +9,6 @@
 #define INC_SENSORS_H_
 
 #include "stm32l4xx_hal.h"
-#include <stdio.h>
 
 typedef struct {
   float humidity;
